@@ -7,8 +7,10 @@ import com.example.llmgateway.apikey.dto.ApiKeyResponse;
 import com.example.llmgateway.apikey.entity.DownstreamApiKey;
 import com.example.llmgateway.apikey.mapper.DownstreamApiKeyMapper;
 import com.example.llmgateway.apikey.service.DownstreamApiKeyService;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -77,6 +79,43 @@ public class DownstreamApiKeyServiceImpl implements DownstreamApiKeyService {
                 .stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    @Override
+    @Transactional
+    public void updateStatus(Long id, String status) {
+        String normalized = status == null ? "" : status.toUpperCase();
+
+        if (!"ACTIVE".equals(normalized)
+                && !"DISABLED".equals(normalized)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Key 状态只能是 ACTIVE 或 DISABLED"
+            );
+        }
+
+        DownstreamApiKey entity = requireKey(id);
+        entity.setStatus(normalized);
+        entity.setUpdatedAt(LocalDateTime.now());
+        keyMapper.updateById(entity);
+    }
+
+    @Override
+    @Transactional
+    public void deleteKey(Long id) {
+        requireKey(id);
+        keyMapper.deleteById(id);
+    }
+
+    private DownstreamApiKey requireKey(Long id) {
+        DownstreamApiKey entity = keyMapper.selectById(id);
+        if (entity == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "API Key 不存在"
+            );
+        }
+        return entity;
     }
 
     private ApiKeyResponse toResponse(DownstreamApiKey entity) {

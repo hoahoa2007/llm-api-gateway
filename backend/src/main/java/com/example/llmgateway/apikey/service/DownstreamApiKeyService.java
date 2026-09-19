@@ -11,4 +11,8 @@ public interface DownstreamApiKeyService {
     ApiKeyCreateResponse createKey(ApiKeyCreateRequest request);
 
     List<ApiKeyResponse> listKeys();
+
+    void updateStatus(Long id, String status);
+
+    void deleteKey(Long id);
 }
