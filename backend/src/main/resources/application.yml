@@ -1,6 +1,19 @@
 spring:
   application:
     name: llm-gateway-backend
+  datasource:
+    url: jdbc:mysql://localhost:3306/llm_gateway?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: ${MYSQL_USERNAME:llm_gateway_app}
+    password: ${MYSQL_PASSWORD:llm_gateway_dev}
+    driver-class-name: com.mysql.cj.jdbc.Driver
 
 server:
   port: 8080
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: auto
