@@ -37,3 +37,22 @@ CREATE TABLE IF NOT EXISTS downstream_api_key (
     UNIQUE KEY uk_api_key_hash (key_hash),
     KEY idx_api_key_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS request_log (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    request_id VARCHAR(64) NOT NULL,
+    api_key_id BIGINT NOT NULL,
+    channel_id BIGINT NOT NULL,
+    model VARCHAR(100) NULL,
+    prompt_tokens INT NULL,
+    completion_tokens INT NULL,
+    cost DECIMAL(18, 6) NOT NULL DEFAULT 0,
+    status VARCHAR(20) NOT NULL,
+    latency_ms BIGINT NULL,
+    error_code VARCHAR(100) NULL,
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_request_log_request_id (request_id),
+    KEY idx_request_log_api_key_created (api_key_id, created_at),
+    KEY idx_request_log_channel_created (channel_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

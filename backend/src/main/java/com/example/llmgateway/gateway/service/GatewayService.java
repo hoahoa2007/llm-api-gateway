@@ -5,7 +5,10 @@ import com.example.llmgateway.apikey.entity.DownstreamApiKey;
 import com.example.llmgateway.apikey.mapper.DownstreamApiKeyMapper;
 import com.example.llmgateway.channel.entity.UpstreamChannel;
 import com.example.llmgateway.channel.mapper.UpstreamChannelMapper;
+import com.example.llmgateway.requestlog.entity.RequestLog;
+import com.example.llmgateway.requestlog.mapper.RequestLogMapper;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -23,30 +26,38 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 import java.util.HexFormat;
+import java.util.UUID;
 
 @Service
 public class GatewayService {
 
     private final DownstreamApiKeyMapper keyMapper;
     private final UpstreamChannelMapper channelMapper;
+    private final RequestLogMapper requestLogMapper;
+    private final ObjectMapper objectMapper;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
 
     public GatewayService(
             DownstreamApiKeyMapper keyMapper,
-            UpstreamChannelMapper channelMapper
+            UpstreamChannelMapper channelMapper,
+            RequestLogMapper requestLogMapper,
+            ObjectMapper objectMapper
     ) {
         this.keyMapper = keyMapper;
         this.channelMapper = channelMapper;
+        this.requestLogMapper = requestLogMapper;
+        this.objectMapper = objectMapper;
     }
 
     public ResponseEntity<String> forwardChatCompletion(
             String authorization,
             JsonNode requestBody
     ) {
-        authenticate(authorization);
+        DownstreamApiKey apiKey = authenticate(authorization);
         UpstreamChannel channel = selectChannel();
 
         String baseUrl = channel.getBaseUrl();
@@ -69,6 +80,13 @@ public class GatewayService {
                         requestBody.toString()
                 ));
 
+        RequestLog requestLog = createRequestLog(
+                apiKey,
+                channel,
+                requestBody
+        );
+        long startedAt = System.nanoTime();
+
         if (StringUtils.hasText(channel.getApiKeyCiphertext())) {
             requestBuilder.header(
                     "Authorization",
@@ -82,17 +100,33 @@ public class GatewayService {
                     HttpResponse.BodyHandlers.ofString()
             );
 
+            updateRequestLog(
+                    requestLog,
+                    upstreamResponse,
+                    startedAt
+            );
+
             return ResponseEntity
                     .status(upstreamResponse.statusCode())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(upstreamResponse.body());
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
+            failRequestLog(
+                    requestLog,
+                    "REQUEST_INTERRUPTED",
+                    startedAt
+            );
             throw new ResponseStatusException(
                     HttpStatus.BAD_GATEWAY,
                     "上游请求被中断"
             );
         } catch (IOException exception) {
+            failRequestLog(
+                    requestLog,
+                    "UPSTREAM_CONNECTION_FAILED",
+                    startedAt
+            );
             throw new ResponseStatusException(
                     HttpStatus.BAD_GATEWAY,
                     "无法连接上游渠道"
@@ -100,7 +134,7 @@ public class GatewayService {
         }
     }
 
-    private void authenticate(String authorization) {
+    private DownstreamApiKey authenticate(String authorization) {
         if (!StringUtils.hasText(authorization)
                 || !authorization.startsWith("Bearer ")) {
             throw new ResponseStatusException(
@@ -135,6 +169,7 @@ public class GatewayService {
                     "下游 API Key 已过期"
             );
         }
+        return apiKey;
     }
 
     private UpstreamChannel selectChannel() {
@@ -164,5 +199,69 @@ public class GatewayService {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 unavailable", exception);
         }
+    }
+
+    private RequestLog createRequestLog(
+            DownstreamApiKey apiKey,
+            UpstreamChannel channel,
+            JsonNode requestBody
+    ) {
+        RequestLog log = new RequestLog();
+        log.setRequestId(UUID.randomUUID().toString());
+        log.setApiKeyId(apiKey.getId());
+        log.setChannelId(channel.getId());
+        log.setModel(requestBody.path("model").asText(channel.getModel()));
+        log.setCost(BigDecimal.ZERO);
+        log.setStatus("PENDING");
+        log.setCreatedAt(LocalDateTime.now());
+        requestLogMapper.insert(log);
+        return log;
+    }
+
+    private void updateRequestLog(
+            RequestLog log,
+            HttpResponse<String> response,
+            long startedAt
+    ) {
+        log.setLatencyMs(elapsedMillis(startedAt));
+
+        if (response.statusCode() >= 200 && response.statusCode() < 300) {
+            log.setStatus("SUCCESS");
+            readUsage(log, response.body());
+        } else {
+            log.setStatus("FAILED");
+            log.setErrorCode("UPSTREAM_" + response.statusCode());
+        }
+        requestLogMapper.updateById(log);
+    }
+
+    private void failRequestLog(
+            RequestLog log,
+            String errorCode,
+            long startedAt
+    ) {
+        log.setStatus("FAILED");
+        log.setErrorCode(errorCode);
+        log.setLatencyMs(elapsedMillis(startedAt));
+        requestLogMapper.updateById(log);
+    }
+
+    private void readUsage(RequestLog log, String responseBody) {
+        try {
+            JsonNode usage = objectMapper.readTree(responseBody).path("usage");
+            log.setPromptTokens(usage.path("prompt_tokens").asInt(0));
+            log.setCompletionTokens(
+                    usage.path("completion_tokens").asInt(0)
+            );
+        } catch (IOException ignored) {
+            log.setPromptTokens(0);
+            log.setCompletionTokens(0);
+        }
+    }
+
+    private long elapsedMillis(long startedAt) {
+        return Duration.ofNanos(
+                System.nanoTime() - startedAt
+        ).toMillis();
     }
 }

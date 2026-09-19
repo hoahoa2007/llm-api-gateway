@@ -10,7 +10,8 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 @MapperScan({
         "com.example.llmgateway.channel.mapper",
-        "com.example.llmgateway.apikey.mapper"
+        "com.example.llmgateway.apikey.mapper",
+        "com.example.llmgateway.requestlog.mapper"
 })
 public class MybatisPlusConfig {
 
