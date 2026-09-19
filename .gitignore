@@ -1,6 +1,21 @@
 # Compiled class file
 *.class
 
+# Build output
+target/
+
+# Local Maven repository used for troubleshooting
+.m2/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+
+# Environment files
+.env
+.env.*
+!.env.example
+
 # Log file
 *.log
 
