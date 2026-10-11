@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.example.llmgateway.apikey.entity.DownstreamApiKey;
 import com.example.llmgateway.apikey.mapper.DownstreamApiKeyMapper;
 import com.example.llmgateway.channel.entity.UpstreamChannel;
-import com.example.llmgateway.channel.mapper.UpstreamChannelMapper;
 import com.example.llmgateway.requestlog.entity.RequestLog;
 import com.example.llmgateway.requestlog.mapper.RequestLogMapper;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -28,13 +27,14 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.UUID;
 
 @Service
 public class GatewayService {
 
     private final DownstreamApiKeyMapper keyMapper;
-    private final UpstreamChannelMapper channelMapper;
+    private final GatewayRoutingService routingService;
     private final RequestLogMapper requestLogMapper;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient = HttpClient.newBuilder()
@@ -43,12 +43,12 @@ public class GatewayService {
 
     public GatewayService(
             DownstreamApiKeyMapper keyMapper,
-            UpstreamChannelMapper channelMapper,
+            GatewayRoutingService routingService,
             RequestLogMapper requestLogMapper,
             ObjectMapper objectMapper
     ) {
         this.keyMapper = keyMapper;
-        this.channelMapper = channelMapper;
+        this.routingService = routingService;
         this.requestLogMapper = requestLogMapper;
         this.objectMapper = objectMapper;
     }
@@ -58,20 +58,39 @@ public class GatewayService {
             JsonNode requestBody
     ) {
         DownstreamApiKey apiKey = authenticate(authorization);
-        UpstreamChannel channel = selectChannel();
+        List<UpstreamChannel> candidates = routingService.orderCandidates(
+                requestBody.path("model").asText(null)
+        );
 
-        String baseUrl = channel.getBaseUrl();
-        if (!StringUtils.hasText(baseUrl)) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_GATEWAY,
-                    "上游渠道地址为空"
+        for (UpstreamChannel channel : candidates) {
+            ResponseEntity<String> response = forwardToChannel(
+                    apiKey,
+                    channel,
+                    requestBody
             );
+
+            if (shouldFailover(response.getStatusCode().value())) {
+                continue;
+            }
+
+            if (response.getStatusCode().is2xxSuccessful()) {
+                consumeQuota(apiKey);
+            }
+            return response;
         }
 
-        String targetUrl = baseUrl.endsWith("/")
-                ? baseUrl + "chat/completions"
-                : baseUrl + "/chat/completions";
+        throw new ResponseStatusException(
+                HttpStatus.BAD_GATEWAY,
+                "所有上游渠道均不可用"
+        );
+    }
 
+    private ResponseEntity<String> forwardToChannel(
+            DownstreamApiKey apiKey,
+            UpstreamChannel channel,
+            JsonNode requestBody
+    ) {
+        String targetUrl = buildTargetUrl(channel);
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                 .uri(URI.create(targetUrl))
                 .timeout(Duration.ofSeconds(30))
@@ -80,13 +99,6 @@ public class GatewayService {
                         requestBody.toString()
                 ));
 
-        RequestLog requestLog = createRequestLog(
-                apiKey,
-                channel,
-                requestBody
-        );
-        long startedAt = System.nanoTime();
-
         if (StringUtils.hasText(channel.getApiKeyCiphertext())) {
             requestBuilder.header(
                     "Authorization",
@@ -94,17 +106,19 @@ public class GatewayService {
             );
         }
 
+        RequestLog requestLog = createRequestLog(
+                apiKey,
+                channel,
+                requestBody
+        );
+        long startedAt = System.nanoTime();
+
         try {
             HttpResponse<String> upstreamResponse = httpClient.send(
                     requestBuilder.build(),
                     HttpResponse.BodyHandlers.ofString()
             );
-
-            updateRequestLog(
-                    requestLog,
-                    upstreamResponse,
-                    startedAt
-            );
+            updateRequestLog(requestLog, upstreamResponse, startedAt);
 
             return ResponseEntity
                     .status(upstreamResponse.statusCode())
@@ -127,11 +141,30 @@ public class GatewayService {
                     "UPSTREAM_CONNECTION_FAILED",
                     startedAt
             );
+            return ResponseEntity
+                    .status(HttpStatus.BAD_GATEWAY)
+                    .build();
+        }
+    }
+
+    private String buildTargetUrl(UpstreamChannel channel) {
+        String baseUrl = channel.getBaseUrl();
+        if (!StringUtils.hasText(baseUrl)) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_GATEWAY,
-                    "无法连接上游渠道"
+                    "上游渠道地址为空"
             );
         }
+
+        return baseUrl.endsWith("/")
+                ? baseUrl + "chat/completions"
+                : baseUrl + "/chat/completions";
+    }
+
+    private boolean shouldFailover(int statusCode) {
+        return statusCode == 408
+                || statusCode == 429
+                || statusCode >= 500;
     }
 
     private DownstreamApiKey authenticate(String authorization) {
@@ -169,24 +202,22 @@ public class GatewayService {
                     "下游 API Key 已过期"
             );
         }
-        return apiKey;
-    }
 
-    private UpstreamChannel selectChannel() {
-        UpstreamChannel channel = channelMapper.selectOne(
-                new LambdaQueryWrapper<UpstreamChannel>()
-                        .eq(UpstreamChannel::getStatus, "ENABLED")
-                        .orderByAsc(UpstreamChannel::getId)
-                        .last("LIMIT 1")
-        );
+        BigDecimal quota = apiKey.getQuotaAmount() == null
+                ? BigDecimal.ZERO
+                : apiKey.getQuotaAmount();
+        BigDecimal used = apiKey.getUsedAmount() == null
+                ? BigDecimal.ZERO
+                : apiKey.getUsedAmount();
 
-        if (channel == null) {
+        if (quota.compareTo(BigDecimal.ZERO) > 0
+                && used.compareTo(quota) >= 0) {
             throw new ResponseStatusException(
-                    HttpStatus.SERVICE_UNAVAILABLE,
-                    "没有可用的上游渠道"
+                    HttpStatus.TOO_MANY_REQUESTS,
+                    "下游 API Key 配额已用完"
             );
         }
-        return channel;
+        return apiKey;
     }
 
     private String sha256(String value) {
@@ -263,5 +294,15 @@ public class GatewayService {
         return Duration.ofNanos(
                 System.nanoTime() - startedAt
         ).toMillis();
+    }
+
+    private void consumeQuota(DownstreamApiKey apiKey) {
+        int updated = keyMapper.consumeQuota(apiKey.getId());
+        if (updated == 0) {
+            throw new ResponseStatusException(
+                    HttpStatus.TOO_MANY_REQUESTS,
+                    "下游 API Key 配额已用完"
+            );
+        }
     }
 }
