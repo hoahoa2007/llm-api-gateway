@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Gateway Test</title>
+    <style>
+        body {
+            max-width: 760px;
+            margin: 40px auto;
+            padding: 0 20px;
+            font-family: Arial, sans-serif;
+            color: #202124;
+        }
+
+        h1 {
+            font-size: 24px;
+        }
+
+        label {
+            display: block;
+            margin-top: 18px;
+            margin-bottom: 6px;
+            font-weight: 700;
+        }
+
+        input,
+        textarea,
+        button {
+            box-sizing: border-box;
+            width: 100%;
+            padding: 10px;
+            font-size: 15px;
+        }
+
+        textarea {
+            min-height: 110px;
+            resize: vertical;
+        }
+
+        button {
+            margin-top: 18px;
+            border: 0;
+            border-radius: 6px;
+            background: #1769aa;
+            color: white;
+            cursor: pointer;
+        }
+
+        pre {
+            min-height: 120px;
+            margin-top: 20px;
+            padding: 14px;
+            overflow: auto;
+            border: 1px solid #d0d7de;
+            border-radius: 6px;
+            background: #f6f8fa;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+<h1>LLM Gateway 测试页面</h1>
+
+<label for="key">下游 API Key</label>
+<input id="key" placeholder="sk-...">
+
+<label for="model">模型名</label>
+<input id="model" value="mock-model">
+
+<label for="message">消息</label>
+<textarea id="message">你好，网关</textarea>
+
+<button id="send">发送请求</button>
+<pre id="result">等待请求...</pre>
+
+<script>
+    const sendButton = document.getElementById("send");
+    const result = document.getElementById("result");
+
+    sendButton.addEventListener("click", async () => {
+        const key = document.getElementById("key").value.trim();
+        const model = document.getElementById("model").value.trim();
+        const message = document.getElementById("message").value.trim();
+
+        result.textContent = "请求发送中...";
+
+        try {
+            const response = await fetch("/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                    "Authorization": "Bearer " + key,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    model: model,
+                    messages: [
+                        {
+                            role: "user",
+                            content: message
+                        }
+                    ]
+                })
+            });
+
+            const text = await response.text();
+            result.textContent = "HTTP " + response.status + "\n\n" + text;
+        } catch (error) {
+            result.textContent = "请求失败：" + error.message;
+        }
+    });
+</script>
+</body>
+</html>
