@@ -3,6 +3,10 @@
 
 # Build output
 target/
+frontend/dist/
+
+# Frontend dependencies
+frontend/node_modules/
 
 # Local Maven repository used for troubleshooting
 .m2/

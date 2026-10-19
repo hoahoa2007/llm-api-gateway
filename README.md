@@ -32,7 +32,7 @@
 | 数据访问 | MyBatis-Plus 3.5.12 |
 | 数据库 | MySQL 5.7+ |
 | 测试 | JUnit 5、Mockito、Spring Boot Test |
-| 前端 | Vue 3（待开发） |
+| 前端 | Vue 3、Vite、Axios、Lucide |
 | 工程化 | Git、GitHub Issue、GitHub Actions |
 
 ## 系统结构
@@ -100,11 +100,24 @@ mvn spring-boot:run
 curl http://localhost:8080/health
 ```
 
-### 3. 运行测试
+### 3. 启动前端
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+浏览器打开终端显示的地址，默认是 `http://localhost:5173/`。
+
+### 4. 运行测试
 
 ```bash
 cd backend
 mvn test
+
+cd ../frontend
+npm run build
 ```
 
 没有在 PATH 中安装 Maven 时，可以直接使用 IntelliJ IDEA 自带的 Maven。
@@ -160,7 +173,7 @@ curl -X POST http://localhost:8080/v1/chat/completions \
 - [x] 渠道权重路由和失败切换
 - [x] 配额控制和请求日志
 - [x] 核心单元测试
-- [ ] 管理后台
+- [x] Vue 管理后台
 - [ ] 流式 SSE 转发
 - [ ] CI 状态和部署说明
 
