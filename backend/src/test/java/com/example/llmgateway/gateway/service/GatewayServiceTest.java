@@ -35,12 +35,15 @@ class GatewayServiceTest {
             mock(DownstreamApiKeyMapper.class);
     private final GatewayRoutingService routingService =
             mock(GatewayRoutingService.class);
+    private final RateLimitService rateLimitService =
+            mock(RateLimitService.class);
     private final RequestLogMapper requestLogMapper =
             mock(RequestLogMapper.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final GatewayService gatewayService = new GatewayService(
             keyMapper,
             routingService,
+            rateLimitService,
             requestLogMapper,
             objectMapper
     );
@@ -67,6 +70,7 @@ class GatewayServiceTest {
 
         when(keyMapper.selectOne(any())).thenReturn(apiKey);
         when(keyMapper.consumeQuota(4L)).thenReturn(1);
+        when(rateLimitService.tryAcquire(4L)).thenReturn(true);
         when(requestLogMapper.insert(any(RequestLog.class))).thenReturn(1);
         when(requestLogMapper.updateById(any(RequestLog.class))).thenReturn(1);
         when(routingService.orderCandidates("mock-model"))
@@ -98,6 +102,7 @@ class GatewayServiceTest {
 
         when(keyMapper.selectOne(any())).thenReturn(apiKey);
         when(keyMapper.consumeQuota(4L)).thenReturn(1);
+        when(rateLimitService.tryAcquire(4L)).thenReturn(true);
         when(requestLogMapper.insert(any(RequestLog.class))).thenReturn(1);
         when(requestLogMapper.updateById(any(RequestLog.class))).thenReturn(1);
         when(routingService.orderCandidates("mock-model"))
@@ -123,6 +128,7 @@ class GatewayServiceTest {
         UpstreamChannel second = channel(2L, secondServer.getAddress().getPort());
 
         when(keyMapper.selectOne(any())).thenReturn(apiKey);
+        when(rateLimitService.tryAcquire(4L)).thenReturn(true);
         when(requestLogMapper.insert(any(RequestLog.class))).thenReturn(1);
         when(requestLogMapper.updateById(any(RequestLog.class))).thenReturn(1);
         when(routingService.orderCandidates("mock-model"))
@@ -143,6 +149,25 @@ class GatewayServiceTest {
     void shouldRejectExhaustedQuotaBeforeRouting() throws IOException {
         DownstreamApiKey apiKey = apiKey(4L, 1, 1);
         when(keyMapper.selectOne(any())).thenReturn(apiKey);
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> gatewayService.forwardChatCompletion(
+                        "Bearer test-key",
+                        requestBody()
+                )
+        );
+
+        assertEquals(429, exception.getStatusCode().value());
+        verifyNoInteractions(routingService);
+        verifyNoInteractions(rateLimitService);
+    }
+
+    @Test
+    void shouldRejectRateLimitedRequestBeforeRouting() throws IOException {
+        DownstreamApiKey apiKey = apiKey(4L, 5, 0);
+        when(keyMapper.selectOne(any())).thenReturn(apiKey);
+        when(rateLimitService.tryAcquire(4L)).thenReturn(false);
 
         ResponseStatusException exception = assertThrows(
                 ResponseStatusException.class,
