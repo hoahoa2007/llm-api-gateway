@@ -13,6 +13,9 @@ server:
 gateway:
   rate-limit:
     requests-per-minute: ${GATEWAY_RATE_LIMIT_PER_MINUTE:60}
+  circuit-breaker:
+    failure-threshold: ${GATEWAY_CIRCUIT_FAILURE_THRESHOLD:3}
+    open-millis: ${GATEWAY_CIRCUIT_OPEN_MILLIS:30000}
 
 mybatis-plus:
   configuration:
