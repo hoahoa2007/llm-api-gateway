@@ -71,6 +71,17 @@ POST /v1/chat/completions
 
 详细设计见 [docs/design.md](docs/design.md)，接口说明见 [docs/api.md](docs/api.md)。
 
+## 设计与模块文档
+
+- [产品需求 PRD #1](https://github.com/hoahoa2007/llm-api-gateway/issues/1)
+- [产品架构 #6](https://github.com/hoahoa2007/llm-api-gateway/issues/6)
+- [上游渠道 #2](https://github.com/hoahoa2007/llm-api-gateway/issues/2)
+- [下游 API Key #13](https://github.com/hoahoa2007/llm-api-gateway/issues/13)
+- [网关请求与路由 #14](https://github.com/hoahoa2007/llm-api-gateway/issues/14)
+- [配额、限流与熔断 #15](https://github.com/hoahoa2007/llm-api-gateway/issues/15)
+- [请求日志与用量统计 #16](https://github.com/hoahoa2007/llm-api-gateway/issues/16)
+- [管理后台 #4](https://github.com/hoahoa2007/llm-api-gateway/issues/4)
+
 ## 本地启动
 
 ### 1. 准备数据库
