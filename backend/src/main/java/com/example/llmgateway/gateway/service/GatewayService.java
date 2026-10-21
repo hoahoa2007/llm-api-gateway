@@ -35,6 +35,7 @@ public class GatewayService {
 
     private final DownstreamApiKeyMapper keyMapper;
     private final GatewayRoutingService routingService;
+    private final RateLimitService rateLimitService;
     private final RequestLogMapper requestLogMapper;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient = HttpClient.newBuilder()
@@ -44,11 +45,13 @@ public class GatewayService {
     public GatewayService(
             DownstreamApiKeyMapper keyMapper,
             GatewayRoutingService routingService,
+            RateLimitService rateLimitService,
             RequestLogMapper requestLogMapper,
             ObjectMapper objectMapper
     ) {
         this.keyMapper = keyMapper;
         this.routingService = routingService;
+        this.rateLimitService = rateLimitService;
         this.requestLogMapper = requestLogMapper;
         this.objectMapper = objectMapper;
     }
@@ -58,6 +61,12 @@ public class GatewayService {
             JsonNode requestBody
     ) {
         DownstreamApiKey apiKey = authenticate(authorization);
+        if (!rateLimitService.tryAcquire(apiKey.getId())) {
+            throw new ResponseStatusException(
+                    HttpStatus.TOO_MANY_REQUESTS,
+                    "下游 API Key 请求过于频繁"
+            );
+        }
         List<UpstreamChannel> candidates = routingService.orderCandidates(
                 requestBody.path("model").asText(null)
         );
