@@ -17,10 +17,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class GatewayRoutingService {
 
     private final UpstreamChannelMapper channelMapper;
+    private final CircuitBreakerService circuitBreakerService;
     private final AtomicInteger sequence = new AtomicInteger();
 
-    public GatewayRoutingService(UpstreamChannelMapper channelMapper) {
+    public GatewayRoutingService(
+            UpstreamChannelMapper channelMapper,
+            CircuitBreakerService circuitBreakerService
+    ) {
         this.channelMapper = channelMapper;
+        this.circuitBreakerService = circuitBreakerService;
     }
 
     public List<UpstreamChannel> orderCandidates(String requestedModel) {
@@ -65,7 +70,11 @@ public class GatewayRoutingService {
                 new LambdaQueryWrapper<UpstreamChannel>()
                         .eq(UpstreamChannel::getStatus, "ENABLED")
                         .orderByAsc(UpstreamChannel::getId)
-        );
+        ).stream()
+                .filter(channel -> circuitBreakerService.isAvailable(
+                        channel.getId()
+                ))
+                .toList();
     }
 
     private UpstreamChannel selectPrimary(List<UpstreamChannel> candidates) {

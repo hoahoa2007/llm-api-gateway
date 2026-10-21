@@ -37,6 +37,8 @@ class GatewayServiceTest {
             mock(GatewayRoutingService.class);
     private final RateLimitService rateLimitService =
             mock(RateLimitService.class);
+    private final CircuitBreakerService circuitBreakerService =
+            mock(CircuitBreakerService.class);
     private final RequestLogMapper requestLogMapper =
             mock(RequestLogMapper.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -44,6 +46,7 @@ class GatewayServiceTest {
             keyMapper,
             routingService,
             rateLimitService,
+            circuitBreakerService,
             requestLogMapper,
             objectMapper
     );
@@ -83,6 +86,7 @@ class GatewayServiceTest {
 
         assertEquals(200, response.getStatusCode().value());
         verify(keyMapper).consumeQuota(4L);
+        verify(circuitBreakerService).recordSuccess(1L);
         verify(requestLogMapper).insert(any(RequestLog.class));
         verify(requestLogMapper).updateById(any(RequestLog.class));
     }
@@ -116,6 +120,8 @@ class GatewayServiceTest {
         assertEquals(200, response.getStatusCode().value());
         verify(requestLogMapper, times(2)).insert(any(RequestLog.class));
         verify(requestLogMapper, times(2)).updateById(any(RequestLog.class));
+        verify(circuitBreakerService).recordFailure(1L);
+        verify(circuitBreakerService).recordSuccess(2L);
         verify(keyMapper).consumeQuota(4L);
     }
 
@@ -143,6 +149,7 @@ class GatewayServiceTest {
         verify(requestLogMapper).insert(any(RequestLog.class));
         verify(requestLogMapper).updateById(any(RequestLog.class));
         verify(keyMapper, times(0)).consumeQuota(4L);
+        verifyNoInteractions(circuitBreakerService);
     }
 
     @Test

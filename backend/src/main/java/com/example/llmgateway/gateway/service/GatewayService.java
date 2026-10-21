@@ -36,6 +36,7 @@ public class GatewayService {
     private final DownstreamApiKeyMapper keyMapper;
     private final GatewayRoutingService routingService;
     private final RateLimitService rateLimitService;
+    private final CircuitBreakerService circuitBreakerService;
     private final RequestLogMapper requestLogMapper;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient = HttpClient.newBuilder()
@@ -46,12 +47,14 @@ public class GatewayService {
             DownstreamApiKeyMapper keyMapper,
             GatewayRoutingService routingService,
             RateLimitService rateLimitService,
+            CircuitBreakerService circuitBreakerService,
             RequestLogMapper requestLogMapper,
             ObjectMapper objectMapper
     ) {
         this.keyMapper = keyMapper;
         this.routingService = routingService;
         this.rateLimitService = rateLimitService;
+        this.circuitBreakerService = circuitBreakerService;
         this.requestLogMapper = requestLogMapper;
         this.objectMapper = objectMapper;
     }
@@ -79,10 +82,12 @@ public class GatewayService {
             );
 
             if (shouldFailover(response.getStatusCode().value())) {
+                circuitBreakerService.recordFailure(channel.getId());
                 continue;
             }
 
             if (response.getStatusCode().is2xxSuccessful()) {
+                circuitBreakerService.recordSuccess(channel.getId());
                 consumeQuota(apiKey);
             }
             return response;
@@ -135,6 +140,7 @@ public class GatewayService {
                     .body(upstreamResponse.body());
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
+            circuitBreakerService.recordFailure(channel.getId());
             failRequestLog(
                     requestLog,
                     "REQUEST_INTERRUPTED",

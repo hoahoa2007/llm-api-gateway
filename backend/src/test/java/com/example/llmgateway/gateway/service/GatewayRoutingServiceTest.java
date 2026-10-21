@@ -17,8 +17,10 @@ class GatewayRoutingServiceTest {
 
     private final UpstreamChannelMapper channelMapper =
             mock(UpstreamChannelMapper.class);
+    private final CircuitBreakerService circuitBreakerService =
+            new CircuitBreakerService(3, 60_000L, System::currentTimeMillis);
     private final GatewayRoutingService routingService =
-            new GatewayRoutingService(channelMapper);
+            new GatewayRoutingService(channelMapper, circuitBreakerService);
 
     @Test
     void shouldSelectPrimaryChannelByWeight() {
@@ -77,6 +79,25 @@ class GatewayRoutingServiceTest {
         );
 
         assertEquals(400, exception.getStatusCode().value());
+    }
+
+    @Test
+    void shouldExcludeChannelWithOpenCircuit() {
+        UpstreamChannel first = channel(1L, "mock-model", 1);
+        UpstreamChannel second = channel(2L, "mock-model", 1);
+        when(channelMapper.selectList(any()))
+                .thenReturn(List.of(first, second));
+
+        circuitBreakerService.recordFailure(1L);
+        circuitBreakerService.recordFailure(1L);
+        circuitBreakerService.recordFailure(1L);
+
+        List<Long> candidateIds = routingService.orderCandidates("mock-model")
+                .stream()
+                .map(UpstreamChannel::getId)
+                .toList();
+
+        assertEquals(List.of(2L), candidateIds);
     }
 
     private UpstreamChannel channel(

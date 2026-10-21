@@ -145,6 +145,8 @@ Content-Type: application/json
 
 每个下游 Key 默认每分钟最多 60 次请求。超过限制时返回 `429`，请求不会进入渠道选择。频率限制可通过环境变量 `GATEWAY_RATE_LIMIT_PER_MINUTE` 调整。
 
+渠道连续失败 3 次后进入 30 秒熔断，期间不会再被选为候选渠道。成功请求会重置该渠道的连续失败计数。阈值和冷却时间可通过 `GATEWAY_CIRCUIT_FAILURE_THRESHOLD` 和 `GATEWAY_CIRCUIT_OPEN_MILLIS` 调整。
+
 ## 请求日志
 
 ```http
