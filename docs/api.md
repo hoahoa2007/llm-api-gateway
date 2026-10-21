@@ -160,6 +160,30 @@ GET /api/logs
 - `latencyMs`：上游请求耗时。
 - `errorCode`：失败时的错误标识。
 
+### 用量汇总
+
+```http
+GET /api/logs/summary
+```
+
+响应：
+
+```json
+{
+  "totalCalls": 3,
+  "successCalls": 2,
+  "failedCalls": 1,
+  "pendingCalls": 0,
+  "promptTokens": 20,
+  "completionTokens": 30,
+  "totalTokens": 50,
+  "totalCost": 0,
+  "averageLatencyMs": 45
+}
+```
+
+空日志库返回全 0。`totalCost` 只汇总日志中已有的成本字段。
+
 ## 常见状态码
 
 | 状态码 | 场景 |

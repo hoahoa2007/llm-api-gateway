@@ -49,6 +49,10 @@ export async function listLogs() {
   return (await api.get("/logs")).data;
 }
 
+export async function getLogSummary() {
+  return (await api.get("/logs/summary")).data;
+}
+
 export async function askGateway(plainKey, payload) {
   const response = await axios.post("/v1/chat/completions", payload, {
     timeout: 40000,
