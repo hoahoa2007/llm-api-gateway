@@ -1,6 +1,7 @@
 package com.example.llmgateway.requestlog.controller;
 
 import com.example.llmgateway.requestlog.dto.RequestLogResponse;
+import com.example.llmgateway.requestlog.dto.RequestLogSummaryResponse;
 import com.example.llmgateway.requestlog.service.RequestLogService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -21,5 +22,10 @@ public class RequestLogController {
     @GetMapping
     public List<RequestLogResponse> list() {
         return requestLogService.listLogs();
+    }
+
+    @GetMapping("/summary")
+    public RequestLogSummaryResponse summary() {
+        return requestLogService.summary();
     }
 }

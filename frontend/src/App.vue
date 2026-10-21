@@ -27,6 +27,7 @@ import {
   deleteChannel,
   deleteKey,
   errorMessage,
+  getLogSummary,
   listChannels,
   listKeys,
   listLogs,
@@ -40,10 +41,22 @@ const loading = reactive({
   channels: false,
   keys: false,
   logs: false,
+  summary: false,
 });
 const channels = ref([]);
 const keys = ref([]);
 const logs = ref([]);
+const summary = ref({
+  totalCalls: 0,
+  successCalls: 0,
+  failedCalls: 0,
+  pendingCalls: 0,
+  promptTokens: 0,
+  completionTokens: 0,
+  totalTokens: 0,
+  totalCost: 0,
+  averageLatencyMs: 0,
+});
 const notice = ref(null);
 const channelModalOpen = ref(false);
 const keyModalOpen = ref(false);
@@ -89,18 +102,19 @@ const stats = computed(() => {
   const activeKeys = keys.value.filter(
     (item) => item.status === "ACTIVE",
   ).length;
-  const successfulLogs = logs.value.filter(
-    (item) => item.status === "SUCCESS",
-  ).length;
-  const successRate = logs.value.length
-    ? Math.round((successfulLogs / logs.value.length) * 100)
+  const successRate = summary.value.totalCalls
+    ? Math.round(
+        (summary.value.successCalls / summary.value.totalCalls) * 100,
+      )
     : 0;
 
   return {
     enabledChannels,
     activeKeys,
-    requestCount: logs.value.length,
+    requestCount: summary.value.totalCalls,
     successRate,
+    totalTokens: summary.value.totalTokens,
+    averageLatencyMs: summary.value.averageLatencyMs,
   };
 });
 
@@ -111,7 +125,12 @@ const currentTitle = computed(
 onMounted(loadAll);
 
 async function loadAll() {
-  await Promise.all([loadChannels(), loadKeys(), loadLogs()]);
+  await Promise.all([
+    loadChannels(),
+    loadKeys(),
+    loadLogs(),
+    loadSummary(),
+  ]);
 }
 
 async function loadChannels() {
@@ -144,6 +163,17 @@ async function loadLogs() {
     showNotice("error", errorMessage(error));
   } finally {
     loading.logs = false;
+  }
+}
+
+async function loadSummary() {
+  loading.summary = true;
+  try {
+    summary.value = await getLogSummary();
+  } catch (error) {
+    showNotice("error", errorMessage(error));
+  } finally {
+    loading.summary = false;
   }
 }
 
@@ -291,7 +321,7 @@ async function runPlayground() {
       messages: [{ role: "user", content: playground.prompt.trim() }],
     });
     playground.response = JSON.stringify(result, null, 2);
-    await loadLogs();
+    await Promise.all([loadLogs(), loadSummary()]);
   } catch (error) {
     playground.error = errorMessage(error);
   } finally {
@@ -372,7 +402,13 @@ function statusClass(status) {
         >
           <RefreshCw
             :size="18"
-            :class="{ spinning: loading.channels || loading.keys || loading.logs }"
+            :class="{
+              spinning:
+                loading.channels ||
+                loading.keys ||
+                loading.logs ||
+                loading.summary,
+            }"
           />
         </button>
       </header>
@@ -418,9 +454,9 @@ function statusClass(status) {
             </div>
           </article>
           <article class="stat">
-            <Activity :size="20" aria-hidden="true" />
+            <ScrollText :size="20" aria-hidden="true" />
             <div>
-              <span>请求记录</span>
+              <span>总调用次数</span>
               <strong>{{ stats.requestCount }}</strong>
             </div>
           </article>
@@ -429,6 +465,20 @@ function statusClass(status) {
             <div>
               <span>成功率</span>
               <strong>{{ stats.successRate }}%</strong>
+            </div>
+          </article>
+          <article class="stat">
+            <Zap :size="20" aria-hidden="true" />
+            <div>
+              <span>Token 用量</span>
+              <strong>{{ formatNumber(stats.totalTokens) }}</strong>
+            </div>
+          </article>
+          <article class="stat">
+            <Activity :size="20" aria-hidden="true" />
+            <div>
+              <span>平均延迟</span>
+              <strong>{{ stats.averageLatencyMs }} ms</strong>
             </div>
           </article>
         </div>
